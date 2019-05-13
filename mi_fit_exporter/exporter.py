@@ -57,7 +57,7 @@ class GpxFileExporter():
 			fp.write(f'{ind}{ind}<name>{time}</name>\n')
 			fp.write(f'{ind}{ind}<trkseg>\n')
 			for point in self.track_points(self.interpolate_data(track_data)):
-				time = datetime.utcfromtimestamp(point.time).isoformat()
+				time = datetime.utcfromtimestamp(point.time + track_data.start_time).isoformat()
 				ext_hr = ''
 				ext_cadence = ''
 				if point.hr:
@@ -168,7 +168,6 @@ class GpxExporter():
 			'TRACKDATA.BULKTIME',
 			'TRACKDATA.BULKHR',
 			'TRACKDATA.BULKPAUSE',
-			'TRACKDATA.BULKSPEED',
 			'TRACKDATA.TYPE',
 			'TRACKDATA.BULKFLAG',
 			'TRACKRECORD.COSTTIME',
