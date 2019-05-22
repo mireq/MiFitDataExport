@@ -97,10 +97,33 @@ class GpxFileExporter():
 		)
 
 	def interpolate_data(self, track_data):
-		times = list(sorted(set(accumulate(track_data.times)).union(accumulate(track_data.hrtimes)).union(accumulate(track_data.steptimes))))
 		track_times = array.array('l', accumulate(track_data.times))
 		hr_times = array.array('l', accumulate(track_data.hrtimes))
 		step_times = array.array('l', accumulate(track_data.steptimes))
+
+		def change_times(times, change, time_from):
+			return array.array('l', (time + change if time >= time_from else time for time in times))
+
+		# remove missing data (wtf?)
+		time_to_trim = (track_times[-1] - track_data.cost_time) if track_times else 0
+		while time_to_trim > 0:
+			max_time = 0
+			max_interval = 0
+			last_time = 0
+			for time in track_times:
+				current_interval = time - last_time
+				last_time = time
+				if current_interval > max_interval:
+					max_interval = current_interval
+					max_time = time
+			time_change = max(max_interval - time_to_trim, 1) - max_interval
+			track_times = change_times(track_times, time_change, max_time)
+			hr_times = change_times(hr_times, time_change, max_time)
+			step_times = change_times(step_times, time_change, max_time)
+			time_to_trim += time_change
+
+		times = list(sorted(set(track_times).union(hr_times).union(step_times)))
+
 
 		return track_data._replace(
 			times=times,
