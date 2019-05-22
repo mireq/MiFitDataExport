@@ -8,10 +8,12 @@ import mi_fit_exporter
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument("output_dir", help="Output directory")
+	parser.add_argument("--debug", help="Dump data into html", action='store_true')
 	args = parser.parse_args()
 
 	exporter = mi_fit_exporter.Exporter()
 	exporter.output_dir = args.output_dir
+	exporter.debug = args.debug
 	exporter.export()
 
 

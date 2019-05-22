@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 import array
 import glob
+import html
 import os
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -145,7 +147,7 @@ class GpxFileExporter():
 			)
 
 
-class GpxExporter():
+class BaseExporter():
 	def __init__(self, input_directory, output_directory):
 		self.input_directory = input_directory
 		self.output_directory = output_directory
@@ -183,18 +185,121 @@ class GpxExporter():
 		try:
 			for row in conn.execute(sql):
 				row = RowRecord(*row)
-				GpxFileExporter(self.output_directory, row).export()
+				self.export_track_row(row)
 		except sqlite3.OperationalError:
 			pass
+
+	def export_track_row(self, row):
+		raise NotImplementedError()
+
+
+class GpxExporter(BaseExporter):
+	def export_track_row(self, row):
+		GpxFileExporter(self.output_directory, row).export()
+
+
+class DebugExporter(BaseExporter):
+	def __init__(self, *args, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.copy_static_files()
+
+	def copy_static_files(self):
+		try:
+			shutil.copytree(
+				os.path.join(os.path.dirname(__file__), 'html', 'static'),
+				os.path.join(self.output_directory, 'static')
+			)
+		except FileExistsError:
+			pass
+
+	def export_track_row(self, row):
+		writer = HtmlTableWriter(self.output_directory, os.path.join('tracks', f'track_{row.TRACKID}.html'))
+		writer.set_title(str(row.TRACKID))
+		writer.set_header('Time', 'Total time', 'Location', 'Altitude', 'Flags')
+
+		times = [int(t) if t else 0 for t in row.BULKTIME.split(';')]
+		locations = row.BULKLL.split(';')
+		altitudes = row.BULKAL.split(';')
+		flags = row.BULKFLAG.split(';')
+
+		total_times = accumulate(times)
+		locations = locations if len(locations) == len(times) else [''] * len(times)
+		altitudes = altitudes if len(altitudes) == len(times) else [''] * len(times)
+		flags = flags if len(flags) == len(times) else [''] * len(times)
+
+		for table_row in zip(times, total_times, locations, altitudes, flags):
+			writer.add_row(*table_row)
+		writer.flush()
+
+
+		if row.BULKHR:
+			writer = HtmlTableWriter(self.output_directory, os.path.join('tracks', f'hr_{row.TRACKID}.html'))
+			writer.set_title(str(row.TRACKID))
+			writer.set_header('Time', 'Total time', 'HR')
+
+			times = [int(t.split(',')[0] if t.split(',')[0] else 1) for t in row.BULKHR.split(';')]
+			hr = [int(t.split(',')[1]) for t in row.BULKHR.split(';')]
+			total_times = accumulate(times)
+
+			for table_row in zip(times, total_times, hr):
+				writer.add_row(*table_row)
+			writer.flush()
+
+
+class HtmlTableWriter():
+	def __init__(self, output_directory, filename, template_name='base.html'):
+		self.header = []
+		self.rows = []
+		self.title = ''
+		self.output_directory = output_directory
+		self.filename = filename
+		with open(os.path.join(os.path.dirname(__file__), 'html', 'templates', template_name), 'r') as fp:
+			self.html_template = fp.read()
+
+	def set_title(self, title):
+		self.title = title
+
+	def set_header(self, *header):
+		self.header = header
+
+	def add_row(self, *row):
+		self.rows.append(row)
+
+	def flush(self):
+		with open(os.path.join(self.output_directory, self.filename), 'w') as fp:
+			css = ('../' * (len(self.filename.split(os.sep))-1)) + 'static/css/style.css';
+			content = self.render_table()
+			fp.write(self.html_template.format(css=css, content=content, title=self.title))
+
+	def render_table(self):
+		thead = self.render_header()
+		tbody = self.render_body()
+		return f'<table><thead><tr>{thead}</tr></thead><tbody>{tbody}</tbody></table>'
+
+	def render_header(self):
+		return ''.join('<th>%s</th>'%(html.escape(item)) for item in self.header)
+
+	def render_body(self):
+		return ''.join('<tr>%s</tr>'%(self.render_row(row)) for row in self.rows)
+
+	def render_row(self, row):
+		return ''.join('<td>%s</td>'%(html.escape(str(item))) for item in row)
 
 
 class Exporter():
 	output_dir = ''
+	debug = False
+
+	def make_path(self, dirname):
+		return os.path.join(self.output_dir, dirname)
 
 	def makedirs(self):
 		os.makedirs(self.output_dir, exist_ok=True)
-		os.makedirs(os.path.join(self.output_dir, 'gpx'), exist_ok=True)
-		os.makedirs(os.path.join(self.output_dir, 'database'), exist_ok=True)
+		os.makedirs(self.make_path('gpx'), exist_ok=True)
+		os.makedirs(self.make_path('database'), exist_ok=True)
+		if self.debug:
+			os.makedirs(self.make_path('debug_html'), exist_ok=True)
+			os.makedirs(self.make_path(os.path.join('debug_html', 'tracks')), exist_ok=True)
 
 	def make_archive(self):
 		output = subprocess.run([
@@ -231,15 +336,19 @@ class Exporter():
 			"-xf",
 			output_file,
 			"-C",
-			os.path.join(self.output_dir, 'database'),
+			self.make_path('database'),
 			"--strip-components=1"
 		])
 		if output.returncode:
 			sys.stderr.write("Failed to extract archive\n")
 			sys.exit(-1)
 
-	def export_gpx(self, dir_name):
-		exporter = GpxExporter(os.path.join(self.output_dir, 'database'), dir_name)
+	def export_gpx(self, output_dir_name):
+		exporter = GpxExporter(self.make_path('database'), output_dir_name)
+		exporter.export_all_tracks()
+
+	def export_debug(self, output_dir_name):
+		exporter = DebugExporter(self.make_path('database'), output_dir_name)
 		exporter.export_all_tracks()
 
 	def export(self):
@@ -247,4 +356,6 @@ class Exporter():
 		self.make_archive()
 		self.download_archive()
 		self.extract_archive()
-		self.export_gpx(os.path.join(self.output_dir, 'gpx'))
+		self.export_gpx(self.make_path('gpx'))
+		if self.debug:
+			self.export_debug(self.make_path('debug_html'))
