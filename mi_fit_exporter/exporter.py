@@ -14,6 +14,7 @@ from itertools import accumulate
 
 
 NO_VALUE = -2000000
+FIX_BIP_GAPS = False
 
 
 RawTrackData = namedtuple('RawTrackData', ['start_time', 'end_time', 'cost_time', 'distance', 'times', 'lat', 'lon', 'alt', 'hrtimes', 'hr', 'steptimes', 'stride', 'cadence'])
@@ -106,24 +107,25 @@ class GpxFileExporter():
 
 		times = list(sorted(set(track_times).union(hr_times).union(step_times)))
 
-		# remove missing data (wtf?)
-		time_to_trim = (times[-1] - track_data.cost_time) if track_times else 0
-		while time_to_trim > 0:
-			max_time = 0
-			max_interval = 0
-			last_time = 0
-			for time in times:
-				current_interval = time - last_time
-				last_time = time
-				if current_interval > max_interval:
-					max_interval = current_interval
-					max_time = time
-			time_change = max(max_interval - time_to_trim, 1) - max_interval
-			track_times = change_times(track_times, time_change, max_time)
-			hr_times = change_times(hr_times, time_change, max_time)
-			step_times = change_times(step_times, time_change, max_time)
-			time_to_trim += time_change
-			times = list(sorted(set(track_times).union(hr_times).union(step_times)))
+		if FIX_BIP_GAPS:
+			# remove missing data (wtf?)
+			time_to_trim = (times[-1] - track_data.cost_time) if track_times else 0
+			while time_to_trim > 0:
+				max_time = 0
+				max_interval = 0
+				last_time = 0
+				for time in times:
+					current_interval = time - last_time
+					last_time = time
+					if current_interval > max_interval:
+						max_interval = current_interval
+						max_time = time
+				time_change = max(max_interval - time_to_trim, 1) - max_interval
+				track_times = change_times(track_times, time_change, max_time)
+				hr_times = change_times(hr_times, time_change, max_time)
+				step_times = change_times(step_times, time_change, max_time)
+				time_to_trim += time_change
+				times = list(sorted(set(track_times).union(hr_times).union(step_times)))
 
 		return track_data._replace(
 			times=times,
