@@ -92,9 +92,9 @@ class GpxFileExporter():
 			alt=array.array('l', [int(val) for val in self.track_data.BULKAL.split(';')] if self.track_data.BULKAL else []),
 			hrtimes=array.array('l', [int(val.split(',')[0] or 1) for val in self.track_data.BULKHR.split(';')] if self.track_data.BULKHR else []),
 			hr=array.array('l', [int(val.split(',')[1]) for val in self.track_data.BULKHR.split(';')] if self.track_data.BULKHR else []),
-			steptimes=array.array('l', [int(val.split(',')[0]) for val in self.track_data.BULKGAIT.split(';')] if self.track_data.BULKGAIT else []),
-			stride=array.array('l', [int(val.split(',')[2]) for val in self.track_data.BULKGAIT.split(';')] if self.track_data.BULKGAIT else []),
-			cadence=array.array('l', [int(val.split(',')[3]) for val in self.track_data.BULKGAIT.split(';')] if self.track_data.BULKGAIT else []),
+			steptimes=array.array('l', [int((val or '0,0,0,0').split(',')[0]) for val in self.track_data.BULKGAIT.split(';')] if self.track_data.BULKGAIT else []),
+			stride=array.array('l', [int((val or '0,0,0,0').split(',')[2]) for val in self.track_data.BULKGAIT.split(';')] if self.track_data.BULKGAIT else []),
+			cadence=array.array('l', [int((val or '0,0,0,0').split(',')[3]) for val in self.track_data.BULKGAIT.split(';')] if self.track_data.BULKGAIT else []),
 		)
 
 	def interpolate_data(self, track_data):
